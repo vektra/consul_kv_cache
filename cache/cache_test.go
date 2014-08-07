@@ -158,3 +158,49 @@ func TestConsulKVCacheDelete(t *testing.T) {
 		t.Fatal("baz didn't go away")
 	}
 }
+
+func TestConsulKVCacheGet(t *testing.T) {
+	defer delConsulKV("foo", true)
+
+	cache := NewConsulKVCache("foo")
+
+	defer cache.Close()
+
+	go cache.BackgroundUpdate()
+
+	c2 := NewConsulKVCache("foo")
+
+	m1 := []byte("hello")
+
+	c2.Set("c/bar", m1)
+	c2.Set("c/baz", m1)
+
+	// propogation delay
+	time.Sleep(100 * time.Millisecond)
+
+	values := cache.GetPrefix("c")
+
+	if len(values) != 2 {
+		t.Fatal("Didn't find the right values")
+	}
+
+	if values[0].Key == "c/bar" {
+		if values[1].Key != "c/baz" {
+			t.Fatal("didn't get the right values")
+		}
+	} else if values[0].Key == "c/baz" {
+		if values[1].Key != "c/bar" {
+			t.Fatal("didn't get the right values")
+		}
+	} else {
+		t.Fatal("wrong keys all together")
+	}
+
+	if !bytes.Equal(values[0].Value, m1) {
+		t.Fatal("corrupted values")
+	}
+
+	if !bytes.Equal(values[1].Value, m1) {
+		t.Fatal("corrupted values")
+	}
+}

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -160,6 +161,30 @@ func (c *ConsulKVCache) Get(key string) ([]byte, bool) {
 
 	c.lock.RUnlock()
 	return b, ok
+}
+
+type Value struct {
+	Key   string
+	Value []byte
+}
+
+func (c *ConsulKVCache) GetPrefix(prefix string) []*Value {
+	c.lock.RLock()
+
+	var values []*Value
+
+	plen := len(c.prefix)
+
+	prefix = c.prefix + prefix
+
+	for k, v := range c.cache {
+		if strings.HasPrefix(k, prefix) {
+			values = append(values, &Value{k[plen:], v})
+		}
+	}
+
+	c.lock.RUnlock()
+	return values
 }
 
 // Set a value. This sets the value in consul as well.
