@@ -39,7 +39,7 @@ func setConsulKV(key string, value []byte) error {
 	data, err := ioutil.ReadAll(resp.Body)
 
 	if !bytes.Equal(data, bTrue) {
-		errors.New("Consul returned an error setting the value")
+		return errors.New("Consul returned an error setting the value")
 	}
 
 	return nil
