@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-type consulKVCache struct {
+type ConsulKVCache struct {
 	prefix string
 
 	cache map[string][]byte
@@ -23,8 +23,8 @@ type consulKVCache struct {
 
 // Create a new cache for the keys under 'prefix'. The methods
 // will add prefix automatically to requests.
-func NewConsulKVCache(prefix string) *consulKVCache {
-	return &consulKVCache{
+func NewConsulKVCache(prefix string) *ConsulKVCache {
+	return &ConsulKVCache{
 		prefix: prefix + "/",
 		cache:  make(map[string][]byte),
 		exit:   false,
@@ -32,7 +32,7 @@ func NewConsulKVCache(prefix string) *consulKVCache {
 }
 
 // Return how many entries the cache contains.
-func (c *consulKVCache) Size() int {
+func (c *ConsulKVCache) Size() int {
 	c.lock.RLock()
 
 	sz := len(c.cache)
@@ -44,13 +44,13 @@ func (c *consulKVCache) Size() int {
 
 // Frees any resources associated with the cache including
 // background goroutines.
-func (c *consulKVCache) Close() {
+func (c *ConsulKVCache) Close() {
 	c.exit = true
 }
 
 // Read the data out of consul and replace the local cache
 // exclusively with the remote values.
-func (c *consulKVCache) Repopulate() error {
+func (c *ConsulKVCache) Repopulate() error {
 	url := "http://localhost:8500/v1/kv/" + c.prefix + "?recurse"
 
 	resp, err := http.Get(url)
@@ -90,7 +90,7 @@ func (c *consulKVCache) Repopulate() error {
 // Update the cached data in the background. This function is meant
 // to be started as a goroutine so that it keeps your data in sync
 // automatically.
-func (c *consulKVCache) BackgroundUpdate() {
+func (c *ConsulKVCache) BackgroundUpdate() {
 	url := "http://localhost:8500/v1/kv/" + c.prefix + "?recurse"
 
 	idx := 0
@@ -153,7 +153,7 @@ func (c *consulKVCache) BackgroundUpdate() {
 
 // Retrieve a value relative to the configured
 // prefix. Only consults local data.
-func (c *consulKVCache) Get(key string) ([]byte, bool) {
+func (c *ConsulKVCache) Get(key string) ([]byte, bool) {
 	c.lock.RLock()
 
 	b, ok := c.cache[c.prefix+key]
@@ -163,7 +163,7 @@ func (c *consulKVCache) Get(key string) ([]byte, bool) {
 }
 
 // Set a value. This sets the value in consul as well.
-func (c *consulKVCache) Set(key string, val []byte) error {
+func (c *ConsulKVCache) Set(key string, val []byte) error {
 	c.lock.Lock()
 
 	key = c.prefix + key
@@ -179,7 +179,7 @@ func (c *consulKVCache) Set(key string, val []byte) error {
 
 // Deletes a value. This deletes the value in consul
 // as well.
-func (c *consulKVCache) Delete(key string) error {
+func (c *ConsulKVCache) Delete(key string) error {
 	c.lock.Lock()
 
 	key = c.prefix + key
