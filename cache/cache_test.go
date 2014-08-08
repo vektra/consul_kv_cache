@@ -178,7 +178,7 @@ func TestConsulKVCacheGet(t *testing.T) {
 	// propogation delay
 	time.Sleep(100 * time.Millisecond)
 
-	values := cache.GetPrefix("c")
+	values, _ := cache.GetPrefix("c")
 
 	if len(values) != 2 {
 		t.Fatal("Didn't find the right values")
@@ -226,17 +226,17 @@ func TestConsulKVCacheClocked(t *testing.T) {
 	// propogation delay
 	time.Sleep(100 * time.Millisecond)
 
-	values := cache.GetPrefix("c")
+	values, max := cache.GetPrefix("c")
 
 	if len(values) != 2 {
 		t.Fatal("Didn't find the right values")
 	}
 
-	if values[0].Clock <= start {
+	if values[0].Clock <= start || values[0].Clock > max {
 		t.Fatal("clock did not increment")
 	}
 
-	if values[1].Clock <= start {
+	if values[1].Clock <= start || values[0].Clock > max {
 		t.Fatal("clock did not increment")
 	}
 }

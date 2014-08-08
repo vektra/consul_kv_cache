@@ -193,21 +193,27 @@ func (c *ConsulKVCache) Get(key string) (*Value, bool) {
 	return b, ok
 }
 
-func (c *ConsulKVCache) GetPrefix(prefix string) []*Value {
+func (c *ConsulKVCache) GetPrefix(prefix string) ([]*Value, ClockValue) {
 	c.lock.RLock()
 
 	var values []*Value
+
+	var max ClockValue
 
 	prefix = c.prefix + prefix
 
 	for k, v := range c.cache {
 		if strings.HasPrefix(k, prefix) {
+			if v.Clock > max {
+				max = v.Clock
+			}
+
 			values = append(values, v)
 		}
 	}
 
 	c.lock.RUnlock()
-	return values
+	return values, max
 }
 
 // Set a value. This sets the value in consul as well.
