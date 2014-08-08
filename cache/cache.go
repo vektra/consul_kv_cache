@@ -12,12 +12,22 @@ import (
 	"time"
 )
 
+type ClockValue int64
+
+type Value struct {
+	Key   string
+	Value []byte
+	Clock ClockValue
+}
+
 type ConsulKVCache struct {
 	prefix string
 
-	cache map[string][]byte
+	cache map[string]*Value
 
 	lock sync.RWMutex
+
+	clock ClockValue
 
 	exit bool
 }
@@ -27,9 +37,20 @@ type ConsulKVCache struct {
 func NewConsulKVCache(prefix string) *ConsulKVCache {
 	return &ConsulKVCache{
 		prefix: prefix + "/",
-		cache:  make(map[string][]byte),
+		cache:  make(map[string]*Value),
+		clock:  0,
 		exit:   false,
 	}
+}
+
+func (c *ConsulKVCache) Clock() ClockValue {
+	c.lock.RLock()
+
+	val := c.clock
+
+	c.lock.RUnlock()
+
+	return val
 }
 
 // Return how many entries the cache contains.
@@ -75,10 +96,14 @@ func (c *ConsulKVCache) Repopulate() error {
 
 	c.lock.Lock()
 
-	tbl := make(map[string][]byte)
+	idx, _ := strconv.Atoi(resp.Header.Get("X-Consul-Index"))
+
+	c.clock = ClockValue(idx)
+
+	tbl := make(map[string]*Value)
 
 	for _, val := range values {
-		tbl[val.Key] = val.Value
+		tbl[val.Key] = &Value{val.Key, val.Value, c.clock}
 	}
 
 	c.cache = tbl
@@ -144,8 +169,12 @@ func (c *ConsulKVCache) BackgroundUpdate() {
 
 		c.lock.Lock()
 
+		c.clock = ClockValue(idx)
+
+		plen := len(c.prefix)
+
 		for _, val := range values {
-			c.cache[val.Key] = val.Value
+			c.cache[val.Key] = &Value{val.Key[plen:], val.Value, c.clock}
 		}
 
 		c.lock.Unlock()
@@ -154,18 +183,14 @@ func (c *ConsulKVCache) BackgroundUpdate() {
 
 // Retrieve a value relative to the configured
 // prefix. Only consults local data.
-func (c *ConsulKVCache) Get(key string) ([]byte, bool) {
+func (c *ConsulKVCache) Get(key string) (*Value, bool) {
 	c.lock.RLock()
 
 	b, ok := c.cache[c.prefix+key]
 
 	c.lock.RUnlock()
-	return b, ok
-}
 
-type Value struct {
-	Key   string
-	Value []byte
+	return b, ok
 }
 
 func (c *ConsulKVCache) GetPrefix(prefix string) []*Value {
@@ -173,13 +198,11 @@ func (c *ConsulKVCache) GetPrefix(prefix string) []*Value {
 
 	var values []*Value
 
-	plen := len(c.prefix)
-
 	prefix = c.prefix + prefix
 
 	for k, v := range c.cache {
 		if strings.HasPrefix(k, prefix) {
-			values = append(values, &Value{k[plen:], v})
+			values = append(values, v)
 		}
 	}
 
@@ -191,11 +214,11 @@ func (c *ConsulKVCache) GetPrefix(prefix string) []*Value {
 func (c *ConsulKVCache) Set(key string, val []byte) error {
 	c.lock.Lock()
 
-	key = c.prefix + key
+	xkey := c.prefix + key
 
-	c.cache[key] = val
+	c.cache[xkey] = &Value{key, val, c.clock}
 
-	err := setConsulKV(key, val)
+	err := setConsulKV(xkey, val)
 
 	c.lock.Unlock()
 

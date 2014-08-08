@@ -28,7 +28,7 @@ func TestConsulKVCache(t *testing.T) {
 		t.Fatal("cache didn't update")
 	}
 
-	if !bytes.Equal(got, m1) {
+	if !bytes.Equal(got.Value, m1) {
 		t.Fatal("message was corrupt")
 	}
 }
@@ -58,7 +58,7 @@ func TestConsulKVCacheBackgroundUpdate(t *testing.T) {
 		t.Fatal("cache didn't update")
 	}
 
-	if !bytes.Equal(got, m1) {
+	if !bytes.Equal(got.Value, m1) {
 		t.Fatal("message was corrupt")
 	}
 
@@ -124,7 +124,7 @@ func TestConsulKVCacheBackgroundSet(t *testing.T) {
 		t.Fatal("cache didn't update")
 	}
 
-	if !bytes.Equal(got, m1) {
+	if !bytes.Equal(got.Value, m1) {
 		t.Fatal("message was corrupt")
 	}
 }
@@ -202,5 +202,41 @@ func TestConsulKVCacheGet(t *testing.T) {
 
 	if !bytes.Equal(values[1].Value, m1) {
 		t.Fatal("corrupted values")
+	}
+}
+
+func TestConsulKVCacheClocked(t *testing.T) {
+	defer delConsulKV("foo", true)
+
+	cache := NewConsulKVCache("foo")
+
+	defer cache.Close()
+
+	go cache.BackgroundUpdate()
+
+	c2 := NewConsulKVCache("foo")
+
+	start := cache.Clock()
+
+	m1 := []byte("hello")
+
+	c2.Set("c/bar", m1)
+	c2.Set("c/baz", m1)
+
+	// propogation delay
+	time.Sleep(100 * time.Millisecond)
+
+	values := cache.GetPrefix("c")
+
+	if len(values) != 2 {
+		t.Fatal("Didn't find the right values")
+	}
+
+	if values[0].Clock <= start {
+		t.Fatal("clock did not increment")
+	}
+
+	if values[1].Clock <= start {
+		t.Fatal("clock did not increment")
 	}
 }
