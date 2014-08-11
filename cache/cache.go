@@ -103,7 +103,7 @@ func (c *ConsulKVCache) Repopulate() error {
 	tbl := make(map[string]*Value)
 
 	for _, val := range values {
-		tbl[val.Key] = &Value{val.Key, val.Value, c.clock}
+		tbl[val.Key] = &Value{val.Key, val.Value, ClockValue(val.ModifyIndex)}
 	}
 
 	c.cache = tbl
@@ -174,7 +174,7 @@ func (c *ConsulKVCache) BackgroundUpdate() {
 		plen := len(c.prefix)
 
 		for _, val := range values {
-			c.cache[val.Key] = &Value{val.Key[plen:], val.Value, c.clock}
+			c.cache[val.Key] = &Value{val.Key[plen:], val.Value, ClockValue(val.ModifyIndex)}
 		}
 
 		c.lock.Unlock()

@@ -61,7 +61,6 @@ func TestConsulKVCacheBackgroundUpdate(t *testing.T) {
 	if !bytes.Equal(got.Value, m1) {
 		t.Fatal("message was corrupt")
 	}
-
 }
 
 func TestConsulKVCacheBackgroundUpdateDetectsDeletes(t *testing.T) {
@@ -98,6 +97,57 @@ func TestConsulKVCacheBackgroundUpdateDetectsDeletes(t *testing.T) {
 	_, ok := cache.Get("baz")
 	if ok {
 		t.Fatal("baz didn't go away")
+	}
+}
+
+func TestConsulKVCacheDeletesDontChangeUnrelatedClocks(t *testing.T) {
+	defer delConsulKV("foo", true)
+
+	cache := NewConsulKVCache("foo")
+
+	defer cache.Close()
+
+	go cache.BackgroundUpdate()
+
+	if cache.Size() != 0 {
+		t.Fatal("why are there values here?")
+	}
+
+	m1 := []byte("hello")
+
+	setConsulKV("foo/bar", m1)
+	setConsulKV("foo/baz", m1)
+
+	// propogation delay
+	time.Sleep(100 * time.Millisecond)
+
+	if cache.Size() != 2 {
+		t.Fatal("didn't pick up both keys")
+	}
+
+	bar, ok := cache.Get("bar")
+	if !ok {
+		t.Fatal("couldn't find bar")
+	}
+
+	delConsulKV("foo/baz", false)
+	setConsulKV("foo/__sync", []byte("now"))
+
+	// propogation delay
+	time.Sleep(100 * time.Millisecond)
+
+	_, ok = cache.Get("baz")
+	if ok {
+		t.Fatal("baz didn't go away")
+	}
+
+	bar2, ok := cache.Get("bar")
+	if !ok {
+		t.Fatal("couldn't find bar")
+	}
+
+	if bar.Clock != bar2.Clock {
+		t.Fatal("delete caused clock change")
 	}
 }
 
