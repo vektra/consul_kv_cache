@@ -7,7 +7,7 @@ import (
 	"net/http"
 )
 
-var bTrue = []byte("true\n")
+var bTrue = []byte("true")
 
 type consulValue struct {
 	CreateIndex int
@@ -38,7 +38,7 @@ func setConsulKV(key string, value []byte) error {
 
 	data, err := ioutil.ReadAll(resp.Body)
 
-	if !bytes.Equal(data, bTrue) {
+	if !bytes.Equal(data[:4], bTrue) {
 		return errors.New("Consul returned an error setting the value")
 	}
 
