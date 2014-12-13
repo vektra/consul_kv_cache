@@ -19,13 +19,10 @@ type Value struct {
 
 type ConsulKVCache struct {
 	consul *consulapi.KV
-
 	prefix string
 
+	lock  sync.RWMutex
 	cache map[string]*Value
-
-	lock sync.RWMutex
-
 	clock ClockValue
 
 	exit bool
@@ -58,7 +55,6 @@ func (c *ConsulKVCache) Clock() ClockValue {
 	val := c.clock
 
 	c.lock.RUnlock()
-
 	return val
 }
 
@@ -69,7 +65,6 @@ func (c *ConsulKVCache) Size() int {
 	sz := len(c.cache)
 
 	c.lock.RUnlock()
-
 	return sz
 }
 
@@ -96,15 +91,12 @@ func (c *ConsulKVCache) Repopulate() error {
 	c.clock = ClockValue(meta.LastIndex)
 
 	tbl := make(map[string]*Value)
-
 	for _, val := range values {
 		tbl[val.Key] = &Value{val.Key, val.Value, ClockValue(val.ModifyIndex)}
 	}
-
 	c.cache = tbl
 
 	c.lock.Unlock()
-
 	return nil
 }
 
@@ -172,18 +164,18 @@ func (c *ConsulKVCache) Get(key string) (*Value, bool) {
 	b, ok := c.cache[c.prefix+key]
 
 	c.lock.RUnlock()
-
 	return b, ok
 }
 
 func (c *ConsulKVCache) GetPrefix(prefix string) ([]*Value, ClockValue) {
-	c.lock.RLock()
-
-	var values []*Value
-
-	var max ClockValue
+	var (
+		values []*Value
+		max    ClockValue
+	)
 
 	prefix = c.prefix + prefix
+
+	c.lock.RLock()
 
 	for k, v := range c.cache {
 		if strings.HasPrefix(k, prefix) {
@@ -201,25 +193,24 @@ func (c *ConsulKVCache) GetPrefix(prefix string) ([]*Value, ClockValue) {
 
 // Set a value. This sets the value in consul as well.
 func (c *ConsulKVCache) Set(key string, val []byte) error {
-	c.lock.Lock()
-
 	xkey := c.prefix + key
+
+	c.lock.Lock()
 
 	c.cache[xkey] = &Value{key, val, c.clock}
 
 	err := c.setConsulKV(xkey, val)
 
 	c.lock.Unlock()
-
 	return err
 }
 
 // Deletes a value. This deletes the value in consul
 // as well.
 func (c *ConsulKVCache) Delete(key string) error {
-	c.lock.Lock()
-
 	key = c.prefix + key
+
+	c.lock.Lock()
 
 	delete(c.cache, key)
 
@@ -227,7 +218,6 @@ func (c *ConsulKVCache) Delete(key string) error {
 	err := c.setConsulKV(c.prefix+"__sync", []byte("1"))
 
 	c.lock.Unlock()
-
 	return err
 }
 
