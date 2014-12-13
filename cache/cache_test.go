@@ -7,10 +7,9 @@ import (
 )
 
 func TestConsulKVCache(t *testing.T) {
-	defer delConsulKV("foo", true)
-
 	cache := NewConsulKVCache("foo")
 
+	defer cache.delConsulKV("foo", true)
 	defer cache.Close()
 
 	if cache.Size() != 0 {
@@ -19,7 +18,7 @@ func TestConsulKVCache(t *testing.T) {
 
 	m1 := []byte("hello")
 
-	setConsulKV("foo/bar", m1)
+	cache.setConsulKV("foo/bar", m1)
 
 	cache.Repopulate()
 
@@ -34,10 +33,9 @@ func TestConsulKVCache(t *testing.T) {
 }
 
 func TestConsulKVCacheBackgroundUpdate(t *testing.T) {
-	defer delConsulKV("foo", true)
-
 	cache := NewConsulKVCache("foo")
 
+	defer cache.delConsulKV("foo", true)
 	defer cache.Close()
 
 	go cache.BackgroundUpdate()
@@ -48,7 +46,7 @@ func TestConsulKVCacheBackgroundUpdate(t *testing.T) {
 
 	m1 := []byte("hello")
 
-	setConsulKV("foo/bar", m1)
+	cache.setConsulKV("foo/bar", m1)
 
 	// propogation delay
 	time.Sleep(100 * time.Millisecond)
@@ -64,10 +62,9 @@ func TestConsulKVCacheBackgroundUpdate(t *testing.T) {
 }
 
 func TestConsulKVCacheBackgroundUpdateDetectsDeletes(t *testing.T) {
-	defer delConsulKV("foo", true)
-
 	cache := NewConsulKVCache("foo")
 
+	defer cache.delConsulKV("foo", true)
 	defer cache.Close()
 
 	go cache.BackgroundUpdate()
@@ -78,8 +75,8 @@ func TestConsulKVCacheBackgroundUpdateDetectsDeletes(t *testing.T) {
 
 	m1 := []byte("hello")
 
-	setConsulKV("foo/bar", m1)
-	setConsulKV("foo/baz", m1)
+	cache.setConsulKV("foo/bar", m1)
+	cache.setConsulKV("foo/baz", m1)
 
 	// propogation delay
 	time.Sleep(100 * time.Millisecond)
@@ -88,8 +85,8 @@ func TestConsulKVCacheBackgroundUpdateDetectsDeletes(t *testing.T) {
 		t.Fatal("didn't pick up both keys")
 	}
 
-	delConsulKV("foo/baz", false)
-	setConsulKV("foo/__sync", []byte("now"))
+	cache.delConsulKV("foo/baz", false)
+	cache.setConsulKV("foo/__sync", []byte("now"))
 
 	// propogation delay
 	time.Sleep(100 * time.Millisecond)
@@ -101,10 +98,9 @@ func TestConsulKVCacheBackgroundUpdateDetectsDeletes(t *testing.T) {
 }
 
 func TestConsulKVCacheDeletesDontChangeUnrelatedClocks(t *testing.T) {
-	defer delConsulKV("foo", true)
-
 	cache := NewConsulKVCache("foo")
 
+	defer cache.delConsulKV("foo", true)
 	defer cache.Close()
 
 	go cache.BackgroundUpdate()
@@ -115,8 +111,8 @@ func TestConsulKVCacheDeletesDontChangeUnrelatedClocks(t *testing.T) {
 
 	m1 := []byte("hello")
 
-	setConsulKV("foo/bar", m1)
-	setConsulKV("foo/baz", m1)
+	cache.setConsulKV("foo/bar", m1)
+	cache.setConsulKV("foo/baz", m1)
 
 	// propogation delay
 	time.Sleep(100 * time.Millisecond)
@@ -130,8 +126,8 @@ func TestConsulKVCacheDeletesDontChangeUnrelatedClocks(t *testing.T) {
 		t.Fatal("couldn't find bar")
 	}
 
-	delConsulKV("foo/baz", false)
-	setConsulKV("foo/__sync", []byte("now"))
+	cache.delConsulKV("foo/baz", false)
+	cache.setConsulKV("foo/__sync", []byte("now"))
 
 	// propogation delay
 	time.Sleep(100 * time.Millisecond)
@@ -152,10 +148,9 @@ func TestConsulKVCacheDeletesDontChangeUnrelatedClocks(t *testing.T) {
 }
 
 func TestConsulKVCacheBackgroundSet(t *testing.T) {
-	defer delConsulKV("foo", true)
-
 	cache := NewConsulKVCache("foo")
 
+	defer cache.delConsulKV("foo", true)
 	defer cache.Close()
 
 	go cache.BackgroundUpdate()
@@ -180,10 +175,9 @@ func TestConsulKVCacheBackgroundSet(t *testing.T) {
 }
 
 func TestConsulKVCacheDelete(t *testing.T) {
-	defer delConsulKV("foo", true)
-
 	cache := NewConsulKVCache("foo")
 
+	defer cache.delConsulKV("foo", true)
 	defer cache.Close()
 
 	go cache.BackgroundUpdate()
@@ -210,10 +204,9 @@ func TestConsulKVCacheDelete(t *testing.T) {
 }
 
 func TestConsulKVCacheGet(t *testing.T) {
-	defer delConsulKV("foo", true)
-
 	cache := NewConsulKVCache("foo")
 
+	defer cache.delConsulKV("foo", true)
 	defer cache.Close()
 
 	go cache.BackgroundUpdate()
@@ -256,10 +249,9 @@ func TestConsulKVCacheGet(t *testing.T) {
 }
 
 func TestConsulKVCacheClocked(t *testing.T) {
-	defer delConsulKV("foo", true)
-
 	cache := NewConsulKVCache("foo")
 
+	defer cache.delConsulKV("foo", true)
 	defer cache.Close()
 
 	go cache.BackgroundUpdate()
