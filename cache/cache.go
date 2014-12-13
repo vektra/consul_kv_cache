@@ -1,15 +1,12 @@
 package cache
 
 import (
-	"encoding/json"
-	"fmt"
-	"io"
-	"net/http"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/armon/consul-api"
 )
 
 type ClockValue int64
@@ -21,12 +18,11 @@ type Value struct {
 }
 
 type ConsulKVCache struct {
+	consul *consulapi.KV
 	prefix string
 
+	lock  sync.RWMutex
 	cache map[string]*Value
-
-	lock sync.RWMutex
-
 	clock ClockValue
 
 	exit bool
@@ -35,7 +31,17 @@ type ConsulKVCache struct {
 // Create a new cache for the keys under 'prefix'. The methods
 // will add prefix automatically to requests.
 func NewConsulKVCache(prefix string) *ConsulKVCache {
+	return NewCustomConsulKVCache(prefix, nil)
+}
+
+// Like NewConsulKVCache, only it supports passing a customized api client.
+func NewCustomConsulKVCache(prefix string, client *consulapi.Client) *ConsulKVCache {
+	if client == nil {
+		client, _ = consulapi.NewClient(consulapi.DefaultConfig())
+	}
+
 	return &ConsulKVCache{
+		consul: client.KV(),
 		prefix: prefix + "/",
 		cache:  make(map[string]*Value),
 		clock:  0,
@@ -49,7 +55,6 @@ func (c *ConsulKVCache) Clock() ClockValue {
 	val := c.clock
 
 	c.lock.RUnlock()
-
 	return val
 }
 
@@ -60,7 +65,6 @@ func (c *ConsulKVCache) Size() int {
 	sz := len(c.cache)
 
 	c.lock.RUnlock()
-
 	return sz
 }
 
@@ -73,19 +77,7 @@ func (c *ConsulKVCache) Close() {
 // Read the data out of consul and replace the local cache
 // exclusively with the remote values.
 func (c *ConsulKVCache) Repopulate() error {
-	url := "http://localhost:8500/v1/kv/" + c.prefix + "?recurse"
-
-	resp, err := http.Get(url)
-	if err != nil {
-		return err
-	}
-
-	defer resp.Body.Close()
-
-	var values []consulValue
-
-	dec := json.NewDecoder(resp.Body)
-	err = dec.Decode(&values)
+	values, meta, err := c.consul.List(c.prefix, nil)
 	if err != nil {
 		return err
 	}
@@ -96,20 +88,15 @@ func (c *ConsulKVCache) Repopulate() error {
 
 	c.lock.Lock()
 
-	idx, _ := strconv.Atoi(resp.Header.Get("X-Consul-Index"))
-
-	c.clock = ClockValue(idx)
+	c.clock = ClockValue(meta.LastIndex)
 
 	tbl := make(map[string]*Value)
-
 	for _, val := range values {
 		tbl[val.Key] = &Value{val.Key, val.Value, ClockValue(val.ModifyIndex)}
 	}
-
 	c.cache = tbl
 
 	c.lock.Unlock()
-
 	return nil
 }
 
@@ -117,12 +104,13 @@ func (c *ConsulKVCache) Repopulate() error {
 // to be started as a goroutine so that it keeps your data in sync
 // automatically.
 func (c *ConsulKVCache) BackgroundUpdate() {
-	url := "http://localhost:8500/v1/kv/" + c.prefix + "?recurse"
-
-	idx := 0
+	plen := len(c.prefix)
+	opts := consulapi.QueryOptions{
+		WaitTime: 5 * time.Minute,
+	}
 
 	for {
-		resp, err := http.Get(fmt.Sprintf("%s&index=%d&wait=5m", url, idx))
+		values, meta, err := c.consul.List(c.prefix, &opts)
 
 		if c.exit {
 			return
@@ -133,18 +121,7 @@ func (c *ConsulKVCache) BackgroundUpdate() {
 			continue
 		}
 
-		idx, _ = strconv.Atoi(resp.Header.Get("X-Consul-Index"))
-
-		defer resp.Body.Close()
-
-		var values []consulValue
-
-		dec := json.NewDecoder(resp.Body)
-		err = dec.Decode(&values)
-		if err != nil && err != io.EOF {
-			time.Sleep(1 * time.Second)
-			continue
-		}
+		opts.WaitIndex = meta.LastIndex
 
 		if len(values) == 0 {
 			continue
@@ -169,9 +146,7 @@ func (c *ConsulKVCache) BackgroundUpdate() {
 
 		c.lock.Lock()
 
-		c.clock = ClockValue(idx)
-
-		plen := len(c.prefix)
+		c.clock = ClockValue(meta.LastIndex)
 
 		for _, val := range values {
 			c.cache[val.Key] = &Value{val.Key[plen:], val.Value, ClockValue(val.ModifyIndex)}
@@ -189,18 +164,18 @@ func (c *ConsulKVCache) Get(key string) (*Value, bool) {
 	b, ok := c.cache[c.prefix+key]
 
 	c.lock.RUnlock()
-
 	return b, ok
 }
 
 func (c *ConsulKVCache) GetPrefix(prefix string) ([]*Value, ClockValue) {
-	c.lock.RLock()
-
-	var values []*Value
-
-	var max ClockValue
+	var (
+		values []*Value
+		max    ClockValue
+	)
 
 	prefix = c.prefix + prefix
+
+	c.lock.RLock()
 
 	for k, v := range c.cache {
 		if strings.HasPrefix(k, prefix) {
@@ -218,32 +193,49 @@ func (c *ConsulKVCache) GetPrefix(prefix string) ([]*Value, ClockValue) {
 
 // Set a value. This sets the value in consul as well.
 func (c *ConsulKVCache) Set(key string, val []byte) error {
-	c.lock.Lock()
-
 	xkey := c.prefix + key
+
+	c.lock.Lock()
 
 	c.cache[xkey] = &Value{key, val, c.clock}
 
-	err := setConsulKV(xkey, val)
+	err := c.setConsulKV(xkey, val)
 
 	c.lock.Unlock()
-
 	return err
 }
 
 // Deletes a value. This deletes the value in consul
 // as well.
 func (c *ConsulKVCache) Delete(key string) error {
-	c.lock.Lock()
-
 	key = c.prefix + key
+
+	c.lock.Lock()
 
 	delete(c.cache, key)
 
-	delConsulKV(key, false)
-	err := setConsulKV(c.prefix+"__sync", []byte("1"))
+	c.delConsulKV(key, false)
+	err := c.setConsulKV(c.prefix+"__sync", []byte("1"))
 
 	c.lock.Unlock()
-
 	return err
+}
+
+func (c *ConsulKVCache) setConsulKV(key string, value []byte) error {
+	pair := consulapi.KVPair{Key: key, Value: value}
+
+	if _, err := c.consul.Put(&pair, nil); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (c *ConsulKVCache) delConsulKV(key string, rec bool) (err error) {
+	if rec {
+		_, err = c.consul.DeleteTree(key, nil)
+	} else {
+		_, err = c.consul.Delete(key, nil)
+	}
+	return
 }
